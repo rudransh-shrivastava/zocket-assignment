@@ -1,117 +1,107 @@
 package controller
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"encoding/json"
+	"net/http"
+
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/database"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/middleware"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/model"
+	"gorm.io/gorm"
 )
 
-// RegisterUser handles user registration
-func RegisterUser(c *fiber.Ctx) error {
+func RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var input model.RegisterInput
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input data",
-		})
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input data", http.StatusBadRequest)
+		return
 	}
 
-	// Validate input fields
 	if input.Name == "" || input.Email == "" || input.Password == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Name, email and password are required",
-		})
+		http.Error(w, "Name, email and password are required", http.StatusBadRequest)
+		return
 	}
 
-	// Check if email already exists
 	var existingUser model.User
-	if result := database.DB.Where("email = ?", input.Email).First(&existingUser); result.RowsAffected > 0 {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
-			"error": "Email already in use",
-		})
+	if err := database.DB.Where("email = ?", input.Email).First(&existingUser).Error; err == nil {
+		http.Error(w, "Email already in use", http.StatusConflict)
+		return
 	}
 
-	// Hash password
 	hashedPassword, err := middleware.HashPassword(input.Password)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not hash password",
-		})
+		http.Error(w, "Could not hash password", http.StatusInternalServerError)
+		return
 	}
 
-	// Create user
 	user := model.User{
 		Name:     input.Name,
 		Email:    input.Email,
 		Password: hashedPassword,
 	}
 
-	if result := database.DB.Create(&user); result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not create user",
-		})
+	if err := database.DB.Create(&user).Error; err != nil {
+		http.Error(w, "Could not create user", http.StatusInternalServerError)
+		return
 	}
 
-	// Generate JWT token
 	token, err := middleware.GenerateToken(user.ID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not generate token",
-		})
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		return
 	}
 
-	// Return user data and token
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"user": fiber.Map{
+	response := map[string]interface{}{
+		"user": map[string]interface{}{
 			"id":    user.ID,
 			"name":  user.Name,
 			"email": user.Email,
 		},
 		"token": token,
-	})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(response)
 }
 
-// LoginUser handles user login
-func LoginUser(c *fiber.Ctx) error {
+func LoginUser(w http.ResponseWriter, r *http.Request) {
 	var input model.LoginInput
-
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input data",
-		})
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input data", http.StatusBadRequest)
+		return
 	}
 
-	// Find user by email
 	var user model.User
-	if result := database.DB.Where("email = ?", input.Email).First(&user); result.Error != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid credentials",
-		})
+	if err := database.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	// Check password
 	if !middleware.CheckPasswordHash(input.Password, user.Password) {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid credentials",
-		})
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
 	}
 
-	// Generate JWT token
 	token, err := middleware.GenerateToken(user.ID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not generate token",
-		})
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		return
 	}
 
-	// Return user data and token
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"user": fiber.Map{
+	response := map[string]interface{}{
+		"user": map[string]interface{}{
 			"id":    user.ID,
 			"name":  user.Name,
 			"email": user.Email,
 		},
 		"token": token,
-	})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

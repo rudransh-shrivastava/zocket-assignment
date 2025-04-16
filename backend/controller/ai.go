@@ -7,11 +7,9 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/model"
 )
 
-// OpenAI request structure
 type OpenAIRequest struct {
 	Model       string          `json:"model"`
 	Messages    []OpenAIMessage `json:"messages"`
@@ -23,7 +21,6 @@ type OpenAIMessage struct {
 	Content string `json:"content"`
 }
 
-// OpenAI response structure
 type OpenAIResponse struct {
 	Choices []struct {
 		Message struct {
@@ -32,29 +29,32 @@ type OpenAIResponse struct {
 	} `json:"choices"`
 }
 
-// GetAISuggestions generates AI-powered task suggestions
-func GetAISuggestions(c *fiber.Ctx) error {
+type AISuggestionResponse struct {
+	Suggestions json.RawMessage `json:"suggestions"`
+}
+
+func GetAISuggestions(w http.ResponseWriter, r *http.Request) {
 	var input model.AISuggestionInput
 
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input data",
-		})
+	// Parse request body
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input data", http.StatusBadRequest)
+		return
 	}
 
-	// Validate required fields
+	// Validate input
 	if input.TaskDescription == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Task description is required",
-		})
+		http.Error(w, "Task description is required", http.StatusBadRequest)
+		return
 	}
 
-	// Prepare OpenAI API request
+	// Prepare OpenAI prompt
 	prompt := fmt.Sprintf(
 		"Based on this task description: '%s', please provide: 1) A better title for this task, 2) A list of 3-5 subtasks that would help complete this task, 3) A suggested priority level (low, medium, high), and 4) A reasonable time estimate for completing this task. Format the response as JSON with these fields: 'title', 'subtasks' (array), 'priority', and 'timeEstimate'.",
 		input.TaskDescription,
 	)
 
+	// Create OpenAI request
 	openaiReq := OpenAIRequest{
 		Model: "gpt-3.5-turbo",
 		Messages: []OpenAIMessage{
@@ -70,58 +70,61 @@ func GetAISuggestions(c *fiber.Ctx) error {
 		Temperature: 0.7,
 	}
 
-	// Convert request to JSON
+	// Marshal request body
 	reqBody, err := json.Marshal(openaiReq)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not process AI request",
-		})
+		http.Error(w, "Could not process AI request", http.StatusInternalServerError)
+		return
 	}
 
-	// Make request to OpenAI API
+	// Create HTTP client and request
 	client := &http.Client{}
 	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not create AI request",
-		})
+		http.Error(w, "Could not create AI request", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		http.Error(w, "AI service not configured", http.StatusInternalServerError)
+		return
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+os.Getenv("OPENAI_API_KEY"))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
+	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not connect to AI service",
-		})
+		http.Error(w, "Could not connect to AI service", http.StatusInternalServerError)
+		return
 	}
 	defer resp.Body.Close()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "AI service returned an error",
-		})
+		http.Error(w, "AI service returned an error", http.StatusInternalServerError)
+		return
 	}
 
 	// Parse response
 	var openaiResp OpenAIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&openaiResp); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not parse AI response",
-		})
+		http.Error(w, "Could not parse AI response", http.StatusInternalServerError)
+		return
 	}
 
-	// Extract suggestions
-	if len(openaiResp.Choices) == 0 {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "AI service did not return any suggestions",
-		})
+	// Validate response
+	if len(openaiResp.Choices) == 0 || openaiResp.Choices[0].Message.Content == "" {
+		http.Error(w, "No suggestions found in AI response", http.StatusInternalServerError)
+		return
 	}
 
-	// Return AI suggestions
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"suggestions": json.RawMessage(openaiResp.Choices[0].Message.Content),
+	// Prepare and send response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(AISuggestionResponse{
+		Suggestions: json.RawMessage(openaiResp.Choices[0].Message.Content),
 	})
 }

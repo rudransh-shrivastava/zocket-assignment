@@ -1,88 +1,75 @@
 package middleware
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// HashPassword creates a bcrypt hash of the password
+type contextKey string
+
+const UserIDKey contextKey = "user_id"
+
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	return string(bytes), err
 }
 
-// CheckPasswordHash compares a password with a hash
 func CheckPasswordHash(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil
 }
 
-// GenerateToken generates a new JWT token
 func GenerateToken(userID uint) (string, error) {
-	// Create token
 	token := jwt.New(jwt.SigningMethodHS256)
-
-	// Set claims
 	claims := token.Claims.(jwt.MapClaims)
 	claims["user_id"] = userID
 	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
 
-	// Generate encoded token
 	tokenString, err := token.SignedString([]byte(os.Getenv("JWT_SECRET")))
 	if err != nil {
 		return "", err
 	}
-
 	return tokenString, nil
 }
 
-// AuthMiddleware protects routes by verifying JWT token
-func AuthMiddleware(c *fiber.Ctx) error {
-	// Get authorization header
-	authHeader := c.Get("Authorization")
+func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
 
-	// Check if auth header starts with Bearer
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Unauthorized",
-		})
-	}
-
-	// Extract the token from the header
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Parse and validate the token
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Validate the signing method
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
 		}
-		return []byte(os.Getenv("JWT_SECRET")), nil
-	})
 
-	if err != nil || !token.Valid {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid or expired token",
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(os.Getenv("JWT_SECRET")), nil
 		})
+
+		if err != nil || !token.Valid {
+			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			http.Error(w, "Invalid token claims", http.StatusUnauthorized)
+			return
+		}
+
+		userID := uint(claims["user_id"].(float64))
+		ctx := context.WithValue(r.Context(), UserIDKey, userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
-
-	// Get the user ID from the token claims
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Invalid token claims",
-		})
-	}
-
-	// Set the user ID in the request context
-	userID := uint(claims["user_id"].(float64))
-	c.Locals("user_id", userID)
-
-	return c.Next()
 }

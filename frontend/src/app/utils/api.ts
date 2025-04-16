@@ -1,5 +1,5 @@
 // API utility functions for tasks
-
+import axios from "axios";
 // Task type definition
 export interface Task {
   id: number;
@@ -96,23 +96,20 @@ export const createTask = async (task: TaskInput): Promise<Task> => {
   }
   task.due_date = new Date(task.due_date).toISOString();
 
-  const response = await fetch(`${API_URL}/tasks`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(task),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    console.log("Got error", error);
-    throw new Error(error.error || "Failed to create task");
+  try {
+    console.log("About to make request with payload:", JSON.stringify(task));
+    const response = await axios.post(`${API_URL}/tasks`, task, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    console.log("Response data:", response);
+    return response.data.task || response.data;
+  } catch (error) {
+    console.error("Error in request:", error);
+    throw error;
   }
-
-  const data = await response.json();
-  return data.task;
 };
 
 // Update task
@@ -126,10 +123,9 @@ export const updateTask = async (
     throw new Error("Not authenticated");
   }
 
-  if (!task.due_date) {
-    throw new Error("Date not selected");
+  if (task.due_date) {
+    task.due_date = new Date(task.due_date).toISOString();
   }
-  task.due_date = new Date(task.due_date).toISOString();
 
   const response = await fetch(`${API_URL}/tasks/${id}`, {
     method: "PUT",

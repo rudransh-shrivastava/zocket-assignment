@@ -1,64 +1,73 @@
 package controller
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"encoding/json"
+	"net/http"
+
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/database"
+	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/middleware"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/model"
-	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/websocket"
+	"gorm.io/gorm"
 )
 
-// GetAllTasks retrieves all tasks for the current user
-func GetAllTasks(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
+func GetAllTasks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(uint)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	var tasks []model.Task
-	if result := database.DB.Where("assigned_to = ?", userID).Find(&tasks); result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not retrieve tasks",
-		})
+	if err := database.DB.Where("assigned_to = ?", userID).Find(&tasks).Error; err != nil {
+		http.Error(w, "Could not retrieve tasks", http.StatusInternalServerError)
+		return
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"tasks": tasks,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"tasks": tasks})
 }
 
-// GetTaskByID retrieves a specific task by ID
-func GetTaskByID(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-	taskID := c.Params("id")
+func GetTaskByID(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(uint)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	taskID := r.PathValue("id")
 
 	var task model.Task
-	if result := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task); result.Error != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Task not found",
-		})
+	if err := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"task": task,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"task": task})
 }
 
-// CreateTask creates a new task
-func CreateTask(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
+func CreateTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(uint)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	var input model.TaskInput
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input data",
-		})
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input data", http.StatusBadRequest)
+		return
 	}
 
-	// Validate required fields
 	if input.Title == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Title is required",
-		})
+		http.Error(w, "Title is required", http.StatusBadRequest)
+		return
 	}
 
-	// Create new task
 	task := model.Task{
 		Title:       input.Title,
 		Description: input.Description,
@@ -69,53 +78,53 @@ func CreateTask(c *fiber.Ctx) error {
 		CreatedBy:   userID,
 	}
 
-	// If no assignee specified, assign to self
 	if task.AssignedTo == 0 {
 		task.AssignedTo = userID
 	}
 
-	if result := database.DB.Create(&task); result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not create task",
-		})
+	if err := database.DB.Create(&task).Error; err != nil {
+		http.Error(w, "Could not create task", http.StatusInternalServerError)
+		return
 	}
 
-	// Notify via WebSocket
-	websocket.BroadcastTaskUpdate(task, "created")
+	// websocket.BroadcastTaskUpdate(task, "created")
 
-	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"task": task,
-	})
+	w.Header().Set("Content-Type", "application/json")
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"task": task})
 }
 
-// UpdateTask updates an existing task
-func UpdateTask(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-	taskID := c.Params("id")
+func UpdateTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(uint)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-	// Find existing task
+	taskID := r.PathValue("id")
+
 	var task model.Task
-	if result := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task); result.Error != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Task not found",
-		})
+	if err := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	// Parse update data
 	var input model.TaskInput
-	if err := c.BodyParser(&input); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid input data",
-		})
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid input data", http.StatusBadRequest)
+		return
 	}
 
-	// Update task fields
+	// Update fields
 	if input.Title != "" {
 		task.Title = input.Title
 	}
-	if input.Description != "" {
-		task.Description = input.Description
-	}
+	task.Description = input.Description
 	if input.Status != "" {
 		task.Status = input.Status
 	}
@@ -129,45 +138,43 @@ func UpdateTask(c *fiber.Ctx) error {
 		task.AssignedTo = input.AssignedTo
 	}
 
-	// Save updated task
-	if result := database.DB.Save(&task); result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not update task",
-		})
+	if err := database.DB.Save(&task).Error; err != nil {
+		http.Error(w, "Could not update task", http.StatusInternalServerError)
+		return
 	}
 
-	// Notify via WebSocket
-	websocket.BroadcastTaskUpdate(task, "updated")
+	// websocket.BroadcastTaskUpdate(task, "updated")
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"task": task,
-	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"task": task})
 }
 
-// DeleteTask deletes a task
-func DeleteTask(c *fiber.Ctx) error {
-	userID := c.Locals("user_id").(uint)
-	taskID := c.Params("id")
+func DeleteTask(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(uint)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-	// Find existing task
+	taskID := r.PathValue("id")
+
 	var task model.Task
-	if result := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task); result.Error != nil {
-		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-			"error": "Task not found",
-		})
+	if err := database.DB.Where("id = ? AND (assigned_to = ? OR created_by = ?)", taskID, userID, userID).First(&task).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			http.Error(w, "Task not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
 	}
 
-	// Delete task
-	if result := database.DB.Delete(&task); result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Could not delete task",
-		})
+	if err := database.DB.Delete(&task).Error; err != nil {
+		http.Error(w, "Could not delete task", http.StatusInternalServerError)
+		return
 	}
 
-	// Notify via WebSocket
-	websocket.BroadcastTaskUpdate(task, "deleted")
+	// websocket.BroadcastTaskUpdate(task, "deleted")
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"message": "Task deleted successfully",
-	})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"message": "Task deleted successfully"})
 }

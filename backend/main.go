@@ -1,13 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
+	"net/http"
 	"os"
+	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/controller"
 	"github.com/rudransh-shrivastava/zocket-assignmnet/backend/database"
@@ -15,78 +14,91 @@ import (
 )
 
 func main() {
-	// Load environment variables
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
 	}
 
-	// Initialize Fiber app
-	app := fiber.New(fiber.Config{
-		ErrorHandler: func(c *fiber.Ctx, err error) error {
-			code := fiber.StatusInternalServerError
-			if e, ok := err.(*fiber.Error); ok {
-				code = e.Code
-			}
-			return c.Status(code).JSON(fiber.Map{
-				"error": err.Error(),
-			})
-		},
-	})
-
 	database.ConnectDB()
-	// Middleware
-	app.Use(logger.New())
-	app.Use(cors.New(cors.Config{
-		AllowOrigins:     os.Getenv("ALLOWED_ORIGINS"),
-		AllowMethods:     "GET,POST,PUT,DELETE",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowCredentials: true,
-	}))
+
+	mux := http.NewServeMux()
 
 	// Setup routes
-	setupRoutes(app)
+	setupRoutes(mux)
 
-	// Setup WebSocket
-	app.Use("/ws", func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) {
-			c.Locals("allowed", true)
-			return c.Next()
-		}
-		return fiber.ErrUpgradeRequired
-	})
+	// Apply middleware chain
+	// Apply middleware chain in correct order
 
-	app.Get("/ws/:id", websocket.New(handleWebSocket))
+	handler := corsMiddleware(LoggingMiddleware(RecoveryMiddleware(mux)))
 
-	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Fatal(app.Listen(":" + port))
+
+	log.Printf("Server listening on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
 
-func setupRoutes(app *fiber.App) {
-	// API routes group
-	api := app.Group("/api")
-
+func setupRoutes(mux *http.ServeMux) {
 	// Auth routes
-	auth := api.Group("/auth")
-	auth.Post("/register", controller.RegisterUser)
-	auth.Post("/login", controller.LoginUser)
+	mux.HandleFunc("POST /api/auth/register", controller.RegisterUser)
+	mux.HandleFunc("POST /api/auth/login", controller.LoginUser)
 
-	// Protected routes
-	tasks := api.Group("/tasks", middleware.AuthMiddleware)
-	tasks.Get("/", controller.GetAllTasks)
-	tasks.Post("/", controller.CreateTask)
-	tasks.Get("/:id", controller.GetTaskByID)
-	tasks.Put("/:id", controller.UpdateTask)
-	tasks.Delete("/:id", controller.DeleteTask)
+	// Task routes with auth middleware
+	mux.HandleFunc("GET /api/tasks/", middleware.AuthMiddleware(controller.GetAllTasks))
+	mux.HandleFunc("POST /api/tasks", middleware.AuthMiddleware(controller.CreateTask))
+	mux.HandleFunc("OPTIONS /api/tasks/", handleCORSOptions)
+	mux.HandleFunc("GET /api/tasks/{id}/", middleware.AuthMiddleware(controller.GetTaskByID))
+	mux.HandleFunc("PUT /api/tasks/{id}/", middleware.AuthMiddleware(controller.UpdateTask))
+	mux.HandleFunc("DELETE /api/tasks/{id}/", middleware.AuthMiddleware(controller.DeleteTask))
 
 	// AI Suggestions route
-	api.Post("/ai/suggest", middleware.AuthMiddleware, controller.GetAISuggestions)
+	mux.HandleFunc("POST /api/ai/suggest", middleware.AuthMiddleware(controller.GetAISuggestions))
+
+	// // WebSocket route
+	// mux.HandleFunc("GET /ws/{id}/", func(w http.ResponseWriter, r *http.Request) {
+	// 	// WebSocket implementation
+	// })
 }
 
-func handleWebSocket(c *websocket.Conn) {
-	// WebSocket handler implementation will go here
-	// This will handle real-time task updates
+// Middleware implementations
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func handleCORSOptions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}
+
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %v", r.Method, r.URL.Path, time.Since(start))
+	})
+}
+
+func RecoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{"error": "Internal server error"})
+				log.Printf("Panic: %v", err)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
