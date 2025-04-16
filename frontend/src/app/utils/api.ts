@@ -33,7 +33,7 @@ export interface AISuggestion {
 }
 
 // Base API URL
-const API_URL = "http://localhost:8080/api";
+const API_URL = process.env.SERVER_URL || "http://localhost:8080/api";
 
 // Get auth token from localStorage
 const getToken = () => localStorage.getItem("token");

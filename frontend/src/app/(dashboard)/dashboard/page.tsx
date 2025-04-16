@@ -36,24 +36,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadTasks();
-
-    // Setup WebSocket connection
-    const token = localStorage.getItem("token");
-    if (token) {
-      const ws = new WebSocket(`ws://localhost:8080/ws/${token}`);
-
-      ws.onmessage = (event) => {
-        // Handle incoming WebSocket messages
-        const data = JSON.parse(event.data);
-        if (data.type === "task_update") {
-          loadTasks();
-        }
-      };
-
-      return () => {
-        ws.close();
-      };
-    }
   }, []);
 
   const handleGenerateTasks = async () => {
