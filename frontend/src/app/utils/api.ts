@@ -91,6 +91,10 @@ export const createTask = async (task: TaskInput): Promise<Task> => {
   if (!token) {
     throw new Error("Not authenticated");
   }
+  if (!task.due_date) {
+    throw new Error("Date not selected");
+  }
+  task.due_date = new Date(task.due_date).toISOString();
 
   const response = await fetch(`${API_URL}/tasks`, {
     method: "POST",
@@ -103,6 +107,7 @@ export const createTask = async (task: TaskInput): Promise<Task> => {
 
   if (!response.ok) {
     const error = await response.json();
+    console.log("Got error", error);
     throw new Error(error.error || "Failed to create task");
   }
 
@@ -120,6 +125,11 @@ export const updateTask = async (
   if (!token) {
     throw new Error("Not authenticated");
   }
+
+  if (!task.due_date) {
+    throw new Error("Date not selected");
+  }
+  task.due_date = new Date(task.due_date).toISOString();
 
   const response = await fetch(`${API_URL}/tasks/${id}`, {
     method: "PUT",
@@ -186,4 +196,9 @@ export const getAISuggestions = async (
 
   const data = await response.json();
   return JSON.parse(data.suggestions);
+};
+
+export const trimDateString = (dateStr: string) => {
+  // This regex replaces the fractional seconds if they have more than 3 digits.
+  return dateStr.replace(/(\.\d{3})\d+/, "$1");
 };

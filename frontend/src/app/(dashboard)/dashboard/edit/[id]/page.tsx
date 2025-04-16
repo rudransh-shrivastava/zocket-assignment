@@ -1,7 +1,7 @@
 // src/app/(dashboard)/dashboard/edit/[id]/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getTask, updateTask, TaskInput } from "@/app/utils/api";
 import { Loader2 } from "lucide-react";
@@ -105,7 +105,7 @@ export default function EditTask({ params }: { params: { id: string } }) {
             value={task.title}
             onChange={handleChange}
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3  text-gray-700 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
 
@@ -119,7 +119,7 @@ export default function EditTask({ params }: { params: { id: string } }) {
             onChange={handleChange}
             rows={5}
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3  text-gray-700 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           ></textarea>
         </div>
 
@@ -132,7 +132,7 @@ export default function EditTask({ params }: { params: { id: string } }) {
               name="status"
               value={task.status}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3  text-gray-700 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="todo">To Do</option>
               <option value="in_progress">In Progress</option>
@@ -149,7 +149,7 @@ export default function EditTask({ params }: { params: { id: string } }) {
               name="priority"
               value={task.priority}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-gray-700 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="low">Low</option>
               <option value="medium">Medium</option>
@@ -166,7 +166,7 @@ export default function EditTask({ params }: { params: { id: string } }) {
               name="due_date"
               value={task.due_date}
               onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2           ring-blue-500"
+              className="w-full px-3 text-gray-700 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2           ring-blue-500"
             />
           </div>
         </div>

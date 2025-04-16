@@ -2,7 +2,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchTasks, deleteTask, updateTask, Task } from "@/app/utils/api";
+import {
+  fetchTasks,
+  deleteTask,
+  updateTask,
+  Task,
+  trimDateString,
+} from "@/app/utils/api";
 import {
   CheckCircle,
   Clock,
@@ -84,19 +90,19 @@ export default function Dashboard() {
 
   const filteredTasks =
     filter === "all" ? tasks : tasks.filter((task) => task.status === filter);
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case "in_progress":
-        return <Clock className="w-5 h-5 text-yellow-500" />;
-      case "blocked":
-        return <AlertCircle className="w-5 h-5 text-red-500" />;
-      default:
-        return <Circle className="w-5 h-5 text-gray-400" />;
-    }
-  };
+  // const getStatusIcon = (status: string) => {
+  //   switch (status) {
+  //     case "completed":
+  //       return <CheckCircle className="w-5 h-5 text-green-500" />;
+  //     case "in_progress":
+  //       return <Clock className="w-5 h-5 text-yellow-500" />;
+  //     case "blocked":
+  //       return <AlertCircle className="w-5 h-5 text-red-500" />;
+  //     default:
+  //       return <Circle className="w-5 h-5 text-gray-400" />;
+  //   }
+  // };
+  console.log("LOGGING FILTERED TASKS: ", filteredTasks);
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -189,7 +195,10 @@ export default function Dashboard() {
       </div>
 
       {filteredTasks.length === 0 ? (
-        <div className="p-6 text-center text-gray-500 bg-white rounded-md shadow">
+        <div
+          className="p-6 text-center text-gray-500 bg-white rounded-md shadow"
+          key={0}
+        >
           No tasks found. Create a new task to get started!
         </div>
       ) : (
@@ -237,8 +246,9 @@ export default function Dashboard() {
                 </div>
                 <div className="text-sm text-gray-500">
                   <span className="font-medium">Created:</span>{" "}
-                  {new Date(task.created_at).toLocaleDateString()}
+                  {new Date(trimDateString(task.created_at)).toString()}
                 </div>
+                )
               </div>
 
               <div className="flex justify-between items-center">
