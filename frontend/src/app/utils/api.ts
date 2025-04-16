@@ -29,7 +29,7 @@ export interface AISuggestion {
   title: string;
   subtasks: string[];
   priority: string;
-  timeEstimate: string;
+  time_estimate: number;
 }
 
 // Base API URL
@@ -168,6 +168,59 @@ export const deleteTask = async (id: number): Promise<void> => {
 
 // Get AI suggestions
 export const getAISuggestions = async (
+  taskDescription: string,
+): Promise<AISuggestion> => {
+  const token = getToken();
+
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(`${API_URL}/ai/suggest`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ task_description: taskDescription }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to get AI suggestions");
+  }
+
+  const data = await response.json();
+  return JSON.parse(data.suggestions);
+};
+
+export const fetchAiSuggestion = async (
+  prompt: string,
+): Promise<AISuggestion> => {
+  const token = getToken();
+
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(`${API_URL}/ai/suggest`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ task_description: prompt }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || "Failed to get AI suggestions");
+  }
+
+  const data = await response.json();
+  return data.suggestions; // Directly return parsed suggestions
+};
+export const fetchAiSuggestions = async (
   taskDescription: string,
 ): Promise<AISuggestion> => {
   const token = getToken();

@@ -65,10 +65,10 @@ export default function Home() {
           </div>
           <div className="relative">
             <div className="bg-white rounded-xl shadow-xl p-6 border border-gray-100">
-              <h3 className="text-xl font-semibold mb-4">
+              <h3 className="text-xl text-gray-700 font-semibold mb-4">
                 AI-Powered Task Management
               </h3>
-              <ul className="space-y-3">
+              <ul className="space-y-3 text-gray-700 ">
                 <li className="flex items-start">
                   <svg
                     className="h-6 w-6 text-green-500 mr-2"
