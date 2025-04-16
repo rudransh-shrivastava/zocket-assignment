@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { getTask, updateTask, deleteTask, Task } from "@/app/utils/api";
 import {
@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-export default function TaskDetails({ params }: { params: { id: string } }) {
+export default function TaskDetails(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const router = useRouter();
   const taskId = parseInt(params.id, 10);
 
